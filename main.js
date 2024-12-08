@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { update } from 'three/examples/jsm/libs/tween.module.js';
 
 //setup
 let dotsLit = 0;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+let camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const light = new THREE.AmbientLight(0x404040, 0);
 scene.add(light);
 camera.position.set(0, 0, 50);
@@ -41,6 +42,88 @@ ballLight.position.set(0, 0, 0); //potentially can be adjusted to create interes
 ball.add(ballLight); // Attach the light to the ball so it moves with it
 
 scene.add(ball);
+
+//Start game text
+const lines = [
+  'Welcome to Connect the Stars!',
+  'To start playing, click on anywhere on the screen...'
+];
+
+let currentLineIndex = 0; // Start showing the first line
+
+// A function to update the text on the canvas and refresh the texture
+function updateText(line) {
+  // Measure the new text
+  const measureCanvas = document.createElement('canvas');
+  const measureCtx = measureCanvas.getContext('2d');
+  measureCtx.font = `${fontSize}px Arial`;
+  
+  const metrics = measureCtx.measureText(line);
+  const textWidth = Math.ceil(metrics.width);
+
+  // Resize the main text canvas
+  textCanvas.width = textWidth + padding;
+  textCanvas.height = 256; // Keep consistent height
+  const ctx = textCanvas.getContext('2d');
+  ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+
+  //redraw text
+  ctx.font = `${fontSize}px Arial`;
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(line, textCanvas.width / 2, textCanvas.height / 2);
+
+  //Create a new texture from the updated canvas
+  const newTexture = new THREE.CanvasTexture(textCanvas);
+  textTexture.needsUpdate = true;
+
+  //Update the material to use the new texture
+  textMaterial.map = newTexture;
+  textMaterial.needsUpdate = true;
+
+  // Recalculate aspect ratio and update plane geometry
+  const newAspectRatio = textCanvas.width / textCanvas.height;
+  const newPlaneWidth = planeHeight * newAspectRatio;
+
+  // Dispose the old geometry and assign a new one
+  textPlane.geometry.dispose();
+  textPlane.geometry = new THREE.PlaneGeometry(newPlaneWidth, planeHeight);
+}
+
+// Initial Setup
+const fontSize = 50;
+const padding = 20;
+
+// Create a reusable canvas and texture
+const textCanvas = document.createElement('canvas');
+const textTexture = new THREE.CanvasTexture(textCanvas);
+
+const textMaterial = new THREE.MeshBasicMaterial({
+  map: textTexture,
+  transparent: true,
+  opacity: 1.0,
+  alphaTest: 0.1
+});
+
+// Create a dummy plane geometry initially; will be updated
+const aspectRatio = textCanvas.width / textCanvas.height;
+const planeHeight = 20;
+const planeWidth = planeHeight * aspectRatio;
+let textPlaneGeometry = new THREE.PlaneGeometry(planeWidth, planeHeight); 
+const textPlane = new THREE.Mesh(textPlaneGeometry, textMaterial);
+textPlane.rotation.x = -Math.PI / 2;
+textPlane.position.set(0, 0.1, 15);
+scene.add(textPlane);
+
+// Update the text initially
+updateText(lines[currentLineIndex]);
+
+// Set an interval to change text every few seconds
+setInterval(() => {
+  currentLineIndex = (currentLineIndex + 1) % lines.length;
+  updateText(lines[currentLineIndex]);
+}, 3000); // Switch text every 3 seconds
 
 
 //Class for Dots (in cylinder form)
@@ -101,6 +184,7 @@ class Dot {
     material.opacity = 0; //change to transparent
     material.emissive.set(0x000000); //Turn off glow
     material.emissiveIntensity = 0; //No glow
+    this.pointLight.intensity = 0;
     this.timer = 0;
     this.glowing = false;
   }
@@ -119,6 +203,7 @@ const dot5 = new Dot(new THREE.Vector3(-75, 0, 0));
 const dot6 = new Dot(new THREE.Vector3(75, 0, 0));
 const dot7 = new Dot(new THREE.Vector3(35, 0, 45));
 const dot8 = new Dot(new THREE.Vector3(-35, 0, 45));
+
 //Add dots to the scene
 scene.add(dot1.mesh);
 scene.add(dot1.pointLight);
@@ -155,14 +240,7 @@ renderer.domElement.addEventListener('click', () => {
   renderer.domElement.requestPointerLock();
 });
 
-//Movement variables
-let velocityX = 0;
-let velocityZ = 0;
-const controlRadius = 10; //Radius of the control circle
-const friction = 0.85; //Slows down the ball
-const maxSpeed = 0.8;
-const VirtualMouse = new THREE.Vector2(0, 0);
-let mouseMoved = false;
+
 
 function onMouseMove(event) {
   if (document.pointerLockElement === renderer.domElement) {
@@ -180,8 +258,86 @@ function onMouseMove(event) {
 
 window.addEventListener('mousemove', onMouseMove);
 
+let gameState = "playing";
+
+function gameEnd() {
+  gameState = "end";
+  console.log("End state reached.");
+  //Delay and then reset game
+  animateCameraToCenter(() => {
+    setTimeout(() => {
+      resetGame();
+      gameState = "playing";
+      resetCameraPosition();
+    }, 3000);
+  });
+}
+
+function animateCameraToCenter(onComplete) {
+  // Target position in the center of the scene
+  const targetPosition = new THREE.Vector3(150, 150, 0); // Center of the canvas
+  const targetLookAt = new THREE.Vector3(0, 0, 0); // Looking towards the scene center
+
+  let progress = 0;
+  const duration = 1.5; // Animation duration in seconds
+  const fps = 60; // Frames per second
+  const totalFrames = fps * duration;
+
+  const startPosition = camera.position.clone();
+  const startLookAt = ball.position.clone();
+
+  function animate() {
+    progress++;
+
+    const t = progress / totalFrames;
+    camera.position.lerpVectors(startPosition, targetPosition, t);
+    const currentLookAt = startLookAt.clone().lerp(targetLookAt, t);
+    camera.lookAt(currentLookAt);
+    console.log(`Progress: ${t.toFixed(2)}, Position: ${camera.position.toArray()}, LookAt: ${currentLookAt.toArray()}`);
+
+    renderer.render(scene, camera);
+
+    if (progress < totalFrames) {
+      requestAnimationFrame(animate);
+    } else if (onComplete) {
+      onComplete();
+    }
+  }
+
+  animate();
+}
+
+function resetCameraPosition() {
+  camera.position.set(0, 75, 50);
+  camera.lookAt(ball.position);
+}
+
+function resetGame() {
+  dotsLit = 0;
+  ball.position.set(0, 4.5, 0);
+  dots.forEach(dot => {
+    dot.reset();
+  });
+  console.log("Game reset");
+}
+
+//Movement variables
+let velocityX = 0;
+let velocityZ = 0;
+const controlRadius = 10; //Radius of the control circle
+const friction = 0.85; //Slows down the ball
+const maxSpeed = 0.8;
+const VirtualMouse = new THREE.Vector2(0, 0);
+let mouseMoved = false;
+
+//Text animation based on ball movement variables
+let ballStartedMoving = false;
+let startMovingTime = null;
+const fadeDelay = 500;
+const fadeDuration = 1000;
 
 function animate() {
+  if (gameState === "playing"){
   //Update the camera position to follow the ball
   camera.position.set(ball.position.x, ball.position.y + 75, ball.position.z + 50); //xyz position is the same as camera position set
   camera.lookAt(ball.position);
@@ -201,7 +357,6 @@ function animate() {
     // Update velocity based on mouse direction
     velocityX = direction.x;
     velocityZ = -direction.y;
-
     mouseMoved = false; // Reset flag
   } else {
     // Gradually reduce velocities using friction
@@ -276,19 +431,50 @@ function animate() {
     // Apply brightness to the ball's emissive intensity and light intensity
     ball.material.emissiveIntensity = brightness;
     ballLight.intensity = brightness * 50; // Scale the light intensity
+
+    //Adjust ball speed when it's closer to a dot
+    const slowdownRange = 15;
+    const minSpeedFactor = 0.2; //slowing down by 20% of the original speed
+
+    if (closestDistance < slowdownRange) {
+      const speedFactor = THREE.MathUtils.mapLinear(
+        closestDistance,
+        0,
+        slowdownRange,
+        minSpeedFactor,
+        1
+      );
+      velocityX *= speedFactor;
+      velocityZ *= speedFactor;
+    }
+  }
+
+  //Ball & Text Interactions
+  //Check if ball has started moving
+  const ballSpeed = Math.sqrt(velocityX * velocityX + velocityZ * velocityZ);
+  //If ball is moving, start counting the time
+  if (ballSpeed > 0 && !ballStartedMoving){
+    ballStartedMoving = true;
+    startMovingTime = performance.now();
+  }
+  //Fade if the ball has started moving after a certain amount of time
+  if (ballStartedMoving){
+    const currentTime = performance.now();
+    const elapsed = currentTime - startMovingTime;
+
+    if (elapsed > fadeDelay){
+      const fadeProgress = (elapsed - fadeDelay) / fadeDuration;
+      const newOpacity = Math.max(1 - fadeProgress, 0);
+      textMaterial.opacity = newOpacity;
+    }
+  }
+  //Game ends
+  if (dotsLit == 2){
+    gameEnd();
   }
 
   renderer.render(scene, camera);
-  
-  if (dotsLit == 2){
-    dotsLit = 0;
-    ball.position.set(0, 4.5, 0);
-    dots.forEach(dot => {
-      dot.reset();
-      dot.glowing = false;
-    });
-    console.log("Game ended");
-  }
+}
 }
 
 renderer.setAnimationLoop(animate);
