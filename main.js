@@ -1,5 +1,27 @@
 import * as THREE from 'three';
-import { update } from 'three/examples/jsm/libs/tween.module.js';
+const backgroundMusic = new Audio('./audio/bard.bgm.mp3');
+
+//BGM setup
+backgroundMusic.loop = true;
+backgroundMusic.volume = 0.2;
+function startBackgroundMusic(){
+  backgroundMusic.play()
+  .then(() => console.log("Background music is playing."))
+  .catch(err => console.error("Error playing background music:", err));
+}
+
+function adjustVolume(distance, maxDistance){
+  const minVolume = 0.2;
+  const maxVolume = 1.0;
+
+  const volume = THREE.MathUtils.clamp(
+    1 - distance / maxDistance, //Inverse linear mapping
+    minVolume,
+    maxVolume
+  );
+  backgroundMusic.volume = volume;
+}
+
 
 //setup
 let dotsLit = 0;
@@ -42,89 +64,6 @@ ballLight.position.set(0, 0, 0); //potentially can be adjusted to create interes
 ball.add(ballLight); // Attach the light to the ball so it moves with it
 
 scene.add(ball);
-
-//Start game text
-const lines = [
-  'Welcome to Connect the Stars!',
-  'To start playing, click on anywhere on the screen...'
-];
-
-let currentLineIndex = 0; // Start showing the first line
-
-// A function to update the text on the canvas and refresh the texture
-function updateText(line) {
-  // Measure the new text
-  const measureCanvas = document.createElement('canvas');
-  const measureCtx = measureCanvas.getContext('2d');
-  measureCtx.font = `${fontSize}px Arial`;
-  
-  const metrics = measureCtx.measureText(line);
-  const textWidth = Math.ceil(metrics.width);
-
-  // Resize the main text canvas
-  textCanvas.width = textWidth + padding;
-  textCanvas.height = 256; // Keep consistent height
-  const ctx = textCanvas.getContext('2d');
-  ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-
-  //redraw text
-  ctx.font = `${fontSize}px Arial`;
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(line, textCanvas.width / 2, textCanvas.height / 2);
-
-  //Create a new texture from the updated canvas
-  const newTexture = new THREE.CanvasTexture(textCanvas);
-  textTexture.needsUpdate = true;
-
-  //Update the material to use the new texture
-  textMaterial.map = newTexture;
-  textMaterial.needsUpdate = true;
-
-  // Recalculate aspect ratio and update plane geometry
-  const newAspectRatio = textCanvas.width / textCanvas.height;
-  const newPlaneWidth = planeHeight * newAspectRatio;
-
-  // Dispose the old geometry and assign a new one
-  textPlane.geometry.dispose();
-  textPlane.geometry = new THREE.PlaneGeometry(newPlaneWidth, planeHeight);
-}
-
-// Initial Setup
-const fontSize = 50;
-const padding = 20;
-
-// Create a reusable canvas and texture
-const textCanvas = document.createElement('canvas');
-const textTexture = new THREE.CanvasTexture(textCanvas);
-
-const textMaterial = new THREE.MeshBasicMaterial({
-  map: textTexture,
-  transparent: true,
-  opacity: 1.0,
-  alphaTest: 0.1
-});
-
-// Create a dummy plane geometry initially; will be updated
-const aspectRatio = textCanvas.width / textCanvas.height;
-const planeHeight = 20;
-const planeWidth = planeHeight * aspectRatio;
-let textPlaneGeometry = new THREE.PlaneGeometry(planeWidth, planeHeight); 
-const textPlane = new THREE.Mesh(textPlaneGeometry, textMaterial);
-textPlane.rotation.x = -Math.PI / 2;
-textPlane.position.set(0, 0.1, 15);
-scene.add(textPlane);
-
-// Update the text initially
-updateText(lines[currentLineIndex]);
-
-// Set an interval to change text every few seconds
-setInterval(() => {
-  currentLineIndex = (currentLineIndex + 1) % lines.length;
-  updateText(lines[currentLineIndex]);
-}, 3000); // Switch text every 3 seconds
-
 
 //Class for Dots (in cylinder form)
 class Dot {
@@ -233,10 +172,93 @@ scene.add(dot8.pointLight);
 // Add to array
 dots.push(dot1, dot2, dot3, dot4, dot5, dot6, dot7, dot8);
 
+//A class for all text
+class text {
+  constructor(scene, fontSize = 50, padding = 20, planeHeight = 20) {
+    this.scene = scene;
+    this.fontSize = fontSize;
+    this.padding = padding;
+    this.planeHeight = planeHeight;
+    this.activeTexts = []; // Array of { mesh, startTime, endTime, followBall, fadeIn, fadeOut, ... }
+  }
+
+  createTextMesh(line) {
+    // Measure text
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    measureCtx.font = `${this.fontSize}px Arial`;
+    const metrics = measureCtx.measureText(line);
+    const textWidth = Math.ceil(metrics.width);
+
+    // Draw text onto a canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = textWidth + this.padding;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${this.fontSize}px Arial`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(line, canvas.width / 2, canvas.height / 2);
+
+    // Create texture & material
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1.0
+    });
+
+    // Calculate aspect ratio and create geometry
+    const aspectRatio = canvas.width / canvas.height;
+    const planeWidth = this.planeHeight * aspectRatio;
+    const geometry = new THREE.PlaneGeometry(planeWidth, this.planeHeight);
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    return mesh;
+  }
+}
+
+const text1 = new text(scene);
+const lines = [
+  "Welcome to Connect the Stars!",
+  "To start playing, click anywhere on the screen..."
+];
+
+let currentTextMesh = null;
+let currentLineIndex = 0;
+let introTextActive = true;
+
+function introText() {
+  if (currentTextMesh) {
+    scene.remove(currentTextMesh);
+    currentTextMesh.geometry.dispose();
+    currentTextMesh.material.dispose();
+  }
+  const line = lines[currentLineIndex];
+  currentTextMesh = text1.createTextMesh(line);
+  currentTextMesh.position.set(0,0.1,15);
+  scene.add(currentTextMesh);
+  currentLineIndex = (currentLineIndex + 1) % lines.length;
+}
+
+if (introTextActive){
+  introText();
+}
+
+setInterval(() => {
+  if (introTextActive) {
+    introText();
+  }
+}, 3000);
+
 
 //Ball Movement 2
 // Request pointer lock on click
 renderer.domElement.addEventListener('click', () => {
+  startBackgroundMusic();
   renderer.domElement.requestPointerLock();
 });
 
@@ -275,7 +297,7 @@ function gameEnd() {
 
 function animateCameraToCenter(onComplete) {
   // Target position in the center of the scene
-  const targetPosition = new THREE.Vector3(150, 150, 0); // Center of the canvas
+  const targetPosition = new THREE.Vector3(0, 150, 25); // Center of the canvas
   const targetLookAt = new THREE.Vector3(0, 0, 0); // Looking towards the scene center
 
   let progress = 0;
@@ -293,7 +315,7 @@ function animateCameraToCenter(onComplete) {
     camera.position.lerpVectors(startPosition, targetPosition, t);
     const currentLookAt = startLookAt.clone().lerp(targetLookAt, t);
     camera.lookAt(currentLookAt);
-    console.log(`Progress: ${t.toFixed(2)}, Position: ${camera.position.toArray()}, LookAt: ${currentLookAt.toArray()}`);
+    //console.log(`Progress: ${t.toFixed(2)}, Position: ${camera.position.toArray()}, LookAt: ${currentLookAt.toArray()}`);
 
     renderer.render(scene, camera);
 
@@ -315,9 +337,13 @@ function resetCameraPosition() {
 function resetGame() {
   dotsLit = 0;
   ball.position.set(0, 4.5, 0);
+  ballStartedMoving = false;
+  startMovingTime = null;
+  introTextActive = true;
   dots.forEach(dot => {
     dot.reset();
   });
+    introText();
   console.log("Game reset");
 }
 
@@ -412,6 +438,10 @@ function animate() {
     } else if (!dot.glowing) {
       dot.reset(); // Reset only if the dot is not glowing
     }
+
+    //Volume mechanics
+    const maxDistance = 100;
+    adjustVolume(closestDistance, maxDistance);
     
   });
 
@@ -458,14 +488,23 @@ function animate() {
     startMovingTime = performance.now();
   }
   //Fade if the ball has started moving after a certain amount of time
-  if (ballStartedMoving){
+  if (ballStartedMoving && introTextActive){
     const currentTime = performance.now();
     const elapsed = currentTime - startMovingTime;
 
     if (elapsed > fadeDelay){
       const fadeProgress = (elapsed - fadeDelay) / fadeDuration;
       const newOpacity = Math.max(1 - fadeProgress, 0);
-      textMaterial.opacity = newOpacity;
+
+      currentTextMesh.material.opacity = newOpacity;
+
+      if (newOpacity <= 0){
+        scene.remove(currentTextMesh);
+        currentTextMesh.geometry.dispose();
+        currentTextMesh.material.dispose();
+        introTextActive = false;
+        console.log("intro text deactiviated.");
+      }
     }
   }
   //Game ends
