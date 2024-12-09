@@ -1,11 +1,18 @@
 import * as THREE from 'three';
-const backgroundMusic = new Audio('./audio/bard.bgm.mp3');
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const audioElement = new Audio('./audio/bard.bgm.mp3');
+const audioSource = audioContext.createMediaElementSource(audioElement);
+const panner = audioContext.createStereoPanner();
 
 //BGM setup
-backgroundMusic.loop = true;
-backgroundMusic.volume = 0.2;
+//connect the audio nodes
+audioSource.connect(panner);
+panner.connect(audioContext.destination);
+audioSource.loop = true;
+panner.volume = 0.2;
+
 function startBackgroundMusic(){
-  backgroundMusic.play()
+  audioElement.play()
   .then(() => console.log("Background music is playing."))
   .catch(err => console.error("Error playing background music:", err));
 }
@@ -19,7 +26,20 @@ function adjustVolume(distance, maxDistance){
     minVolume,
     maxVolume
   );
-  backgroundMusic.volume = volume;
+  audioElement.volume = volume;
+}
+
+function adjustPanning(ballPosition, dotPosition){
+  const maxDistance = 100;
+  const relativeX = dotPosition.x - ballPosition.x;
+
+  //Map relative X to the pan range (-1 to 1)
+  const panValue = THREE.MathUtils.clamp(
+    relativeX / maxDistance,
+    -1.0,
+    1.0
+  );
+  panner.pan.value = panValue;
 }
 
 
@@ -438,11 +458,6 @@ function animate() {
     } else if (!dot.glowing) {
       dot.reset(); // Reset only if the dot is not glowing
     }
-
-    //Volume mechanics
-    const maxDistance = 100;
-    adjustVolume(closestDistance, maxDistance);
-    
   });
 
   //Adjusting the ball's brightness and pointlight based on the distance to the closest dot
@@ -477,6 +492,11 @@ function animate() {
       velocityX *= speedFactor;
       velocityZ *= speedFactor;
     }
+
+    //Volume mechanics
+    //const maxDistance = 100;
+    adjustVolume(closestDistance, maxDistance);
+    adjustPanning(ball.position, closestDot.mesh.position);
   }
 
   //Ball & Text Interactions
