@@ -19,7 +19,7 @@ function startBackgroundMusic(){
 
 function adjustVolume(distance, maxDistance){
   const minVolume = 0.2;
-  const maxVolume = 1.0;
+  const maxVolume = 0.5;
 
   const volume = THREE.MathUtils.clamp(
     1 - distance / maxDistance, //Inverse linear mapping
@@ -43,7 +43,7 @@ function adjustPanning(ballPosition, dotPosition){
 }
 
 
-//setup
+//Setup
 let dotsLit = 0;
 const scene = new THREE.Scene();
 let camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -63,6 +63,19 @@ const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
 plane.rotation.x = -Math.PI / 2; // Rotate to make it horizontal
 scene.add(plane);
+
+// Plane outline
+const outlineGeometry = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-200, 0.1, -200), // Bottom-left corner
+  new THREE.Vector3(-200, 0.1, 200),  // Top-left corner
+  new THREE.Vector3(200, 0.1, 200),   // Top-right corner
+  new THREE.Vector3(200, 0.1, -200),  // Bottom-right corner
+  new THREE.Vector3(-200, 0.1, -200)  // Back to bottom-left to close the loop
+]);
+
+const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x434778, linewidth: 1 });
+const planeOutline = new THREE.Line(outlineGeometry, outlineMaterial);
+scene.add(planeOutline);
 
 //Ball
 const geometry = new THREE.SphereGeometry(5, 32, 16);
@@ -243,8 +256,8 @@ class text {
 
 const text1 = new text(scene);
 const lines = [
-  "Welcome to Connect the Stars!",
-  "To start playing, click anywhere on the screen..."
+  "Connect the Stars",
+  "Tap and start seeking..."
 ];
 
 let currentTextMesh = null;
@@ -305,14 +318,31 @@ let gameState = "playing";
 function gameEnd() {
   gameState = "end";
   console.log("End state reached.");
+  
+  const dotConnections = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+  ];
+
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 4 });
+
+  // Animate the lines connecting dots
+  animateLines(dotConnections, dots, scene, lineMaterial, () => {
+    console.log("Line animation completed. Resetting game...");
+  });
   //Delay and then reset game
   animateCameraToCenter(() => {
     setTimeout(() => {
       resetGame();
       gameState = "playing";
       resetCameraPosition();
-    }, 3000);
-  });
+      }, 7000);
+    });
 }
 
 function animateCameraToCenter(onComplete) {
@@ -349,6 +379,68 @@ function animateCameraToCenter(onComplete) {
   animate();
 }
 
+const animatedLines = [];
+function animateLines(dotConnections, dots, scene, lineMaterial, onComplete) {
+  let currentLineIndex = 0;
+
+  // Prepare the lines
+  dotConnections.forEach(([startIdx, endIdx], index) => {
+    const startDot = dots[startIdx].mesh.position;
+    const endDot = dots[endIdx].mesh.position;
+
+    const lineGeometry = new THREE.BufferGeometry();
+    const points = [
+      new THREE.Vector3(startDot.x, startDot.y, startDot.z),
+      new THREE.Vector3(startDot.x, startDot.y, startDot.z), // Initially set to start point
+    ];
+    lineGeometry.setFromPoints(points);
+
+    const line = new THREE.Line(lineGeometry, lineMaterial);
+    animatedLines.push({ line, startDot, endDot, progress: 0 });
+    scene.add(line);
+
+    console.log(`Line ${index} prepared from (${startDot.x}, ${startDot.y}, ${startDot.z}) to (${endDot.x}, ${endDot.y}, ${endDot.z})`);
+  });
+
+  // Animation loop for lines
+  function drawLine() {
+    if (currentLineIndex < animatedLines.length) {
+      const { line, startDot, endDot, progress } = animatedLines[currentLineIndex];
+      const lineGeometry = line.geometry;
+
+      // Update progress for the current line
+      animatedLines[currentLineIndex].progress += 0.02;
+      const animationProgress = animatedLines[currentLineIndex].progress;
+
+      console.log(`Animating line ${currentLineIndex}: progress=${animationProgress.toFixed(2)}`);
+
+      // Interpolate between start and end points
+      const newPoint = new THREE.Vector3().lerpVectors(startDot, endDot, animationProgress);
+
+      // Update the line's geometry
+      lineGeometry.attributes.position.array[3] = newPoint.x;
+      lineGeometry.attributes.position.array[4] = newPoint.y;
+      lineGeometry.attributes.position.array[5] = newPoint.z;
+      lineGeometry.attributes.position.needsUpdate = true;
+      console.log("Updated geometry for line:", lineGeometry.attributes.position.array);
+
+      // Check if the current line is fully drawn
+      if (animationProgress >= 1) {
+        //console.log(`Line ${currentLineIndex} fully drawn.`);
+        currentLineIndex++;
+      }
+      renderer.render(scene, camera);
+      requestAnimationFrame(drawLine);
+    } else {
+      console.log("All lines animated.");
+      if (onComplete) onComplete();
+    }
+  }
+
+  // Start the animation loop
+  drawLine();
+}
+
 function resetCameraPosition() {
   camera.position.set(0, 75, 50);
   camera.lookAt(ball.position);
@@ -364,6 +456,17 @@ function resetGame() {
     dot.reset();
   });
     introText();
+
+  animatedLines.forEach((entry, index) => {
+    if (entry.line && entry.line.geometry && entry.line.material) {
+      scene.remove(entry.line); // Remove from scene
+      entry.line.geometry.dispose(); // Dispose geometry
+      entry.line.material.dispose(); // Dispose material
+    } else {
+      console.warn(`Line at index ${index} is missing geometry or material.`);
+    }
+  });
+  animatedLines.length = 0;
   console.log("Game reset");
 }
 
@@ -405,11 +508,11 @@ function animate() {
     velocityZ = -direction.y;
     mouseMoved = false; // Reset flag
   } else {
-    // Gradually reduce velocities using friction
+    // // Gradually reduce velocities using friction
     // velocityX *= friction;
     // velocityZ *= friction;
 
-    // Stop completely if velocity is very small (smooth threshold)
+    // // Stop completely if velocity is very small (smooth threshold)
     if (Math.abs(velocityX) < 0.0001) velocityX = 0;
     if (Math.abs(velocityZ) < 0.0001) velocityZ = 0;
   }
@@ -428,6 +531,12 @@ function animate() {
     ball.rotation.z += rotationZ;
   }
 
+  // Constrain the ball's position within the plane boundaries
+  const planeHalfSize = 200; // Half the size of the plane
+  ball.position.x = THREE.MathUtils.clamp(ball.position.x, -planeHalfSize, planeHalfSize);
+  ball.position.z = THREE.MathUtils.clamp(ball.position.z, -planeHalfSize, planeHalfSize);
+
+
   // Calculate closest dot
   let closestDot = null;
   let closestDistance = Infinity;
@@ -436,11 +545,12 @@ function animate() {
     //distance from ball to dot
     const distance = ball.position.distanceTo(dot.mesh.position);
     //Finding the dot that's the closest to the ball
-    if (distance < closestDistance) {
+    if (!dot.glowing && distance < closestDistance) {
       //Updating the closest distance when there's a closer dot
       closestDistance = distance;
       closestDot = dot;
-    }
+      }
+    
     //Defining when the ball is inside the dot
     const isInside = distance < (dot.mesh.geometry.parameters.radiusTop + 5);
 
@@ -461,7 +571,7 @@ function animate() {
   });
 
   //Adjusting the ball's brightness and pointlight based on the distance to the closest dot
-  if (closestDot) {
+  if (closestDot && !closestDot.glowing) {
     const maxDistance = 100; // Maximum distance for mapping brightness
     const minBrightness = 0.1; // Minimum brightness to keep it visible
     const maxBrightness = 1.0; // Maximum brightness
