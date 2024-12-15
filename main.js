@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-const audioElement = new Audio('./audio/bard.bgm.mp3');
+const audioElement = new Audio('./audio/bard.bgm.1hr.mp3');
 const audioSource = audioContext.createMediaElementSource(audioElement);
 const panner = audioContext.createStereoPanner();
 
@@ -17,16 +17,21 @@ function startBackgroundMusic(){
   .catch(err => console.error("Error playing background music:", err));
 }
 
-function adjustVolume(distance, maxDistance){
-  const minVolume = 0.2;
-  const maxVolume = 0.5;
+let currentVolume = 1.0; // Start with the maximum volume
+const volumeDampingFactor = 0.01; // Adjust for smoother transitions (lower = smoother)
 
-  const volume = THREE.MathUtils.clamp(
+function adjustVolume(distance, maxDistance){
+  const minVolume = 0.1;
+  const maxVolume = 1;
+
+  const targetVolume = THREE.MathUtils.clamp(
     1 - distance / maxDistance, //Inverse linear mapping
     minVolume,
     maxVolume
   );
-  audioElement.volume = volume;
+  currentVolume = THREE.MathUtils.lerp(currentVolume, targetVolume, volumeDampingFactor);
+
+  audioElement.volume = currentVolume;
 }
 
 function adjustPanning(ballPosition, dotPosition){
@@ -58,7 +63,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 //Plane
-const planeGeometry = new THREE.PlaneGeometry(400, 400);
+const planeGeometry = new THREE.PlaneGeometry(800, 400);
 const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
 const plane = new THREE.Mesh(planeGeometry, planeMaterial);
 plane.rotation.x = -Math.PI / 2; // Rotate to make it horizontal
@@ -66,11 +71,11 @@ scene.add(plane);
 
 // Plane outline
 const outlineGeometry = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(-200, 0.1, -200), // Bottom-left corner
-  new THREE.Vector3(-200, 0.1, 200),  // Top-left corner
-  new THREE.Vector3(200, 0.1, 200),   // Top-right corner
-  new THREE.Vector3(200, 0.1, -200),  // Bottom-right corner
-  new THREE.Vector3(-200, 0.1, -200)  // Back to bottom-left to close the loop
+  new THREE.Vector3(-400, 0.1, -200), // Bottom-left corner
+  new THREE.Vector3(-400, 0.1, 200),  // Top-left corner
+  new THREE.Vector3(400, 0.1, 200),   // Top-right corner
+  new THREE.Vector3(400, 0.1, -200),  // Bottom-right corner
+  new THREE.Vector3(-400, 0.1, -200)  // Back to bottom-left to close the loop
 ]);
 
 const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x434778, linewidth: 1 });
@@ -163,47 +168,83 @@ class Dot {
 
 }
 
-//Dots
+//Dots & Levels
+// Levels: Array of dot positions for each level
+const levels = [
+  [ // Level 1: Lynx
+    new THREE.Vector3(-190, 0, 100),
+    new THREE.Vector3(-170, 0, 70),
+    new THREE.Vector3(-130, 0, 60),
+    new THREE.Vector3(-100, 0, 25),
+    new THREE.Vector3(-10, 0, 30),
+    new THREE.Vector3(90, 0, -20),
+    new THREE.Vector3(130, 0, -110),
+    new THREE.Vector3(170, 0, -140),
+    
+  ],
+  [ // Level 2: Cassiopeia
+    new THREE.Vector3(-190, 0, 50),
+    new THREE.Vector3(-80, 0, 90),
+    new THREE.Vector3(0, 0, 40),
+    new THREE.Vector3(130, 0, 60),
+    new THREE.Vector3(170, 0, -100),
+  ],
+  [ // Level 3: The Fish Hook
+    new THREE.Vector3(-120, 0, 10),
+    new THREE.Vector3(-180, 0, 60),
+    new THREE.Vector3(-140, 0, 120),
+    new THREE.Vector3(-20, 0, 150),
+    new THREE.Vector3(30, 0, -10),
+    new THREE.Vector3(120, 0, -100),
+    new THREE.Vector3(230, 0, -120),
+  ],
+  [ // Level 4: Aries
+    new THREE.Vector3(-200, 0, -100),
+    new THREE.Vector3(20, 0, -60),
+    new THREE.Vector3(150, 0, 30),
+    new THREE.Vector3(160, 0, 80),
+  ],
+  [ // Level 5: The Big Dipper
+    new THREE.Vector3(-200, 0, -120),
+    new THREE.Vector3(-100, 0, -100),
+    new THREE.Vector3(-30, 0, -40),
+    new THREE.Vector3(70, 0, 0),
+    new THREE.Vector3(250, 0, 30),
+    new THREE.Vector3(200, 0, 130),
+    new THREE.Vector3(80, 0, 100),
+  ],
+  [ // Level 6: Draco, the Dragon
+    new THREE.Vector3(-90, 0, -30),
+    new THREE.Vector3(-160, 0, -10),
+    new THREE.Vector3(-120, 0, 20),
+    new THREE.Vector3(0, 0, -120),
+    new THREE.Vector3(80, 0, -60),
+    new THREE.Vector3(20, 0, 80),
+    new THREE.Vector3(150, 0, 120),
+    new THREE.Vector3(270, 0, 100),
+  ],
+];
+
 // Array to store dots
 const dots = [];
-//Create the dots
-const dot1 = new Dot(new THREE.Vector3(-50, 0, -50));
-const dot2 = new Dot(new THREE.Vector3(0, 0, 80));
-const dot3 = new Dot(new THREE.Vector3(50, 0, -50));
-const dot4 = new Dot(new THREE.Vector3(0, 0, -25));
-const dot5 = new Dot(new THREE.Vector3(-75, 0, 0));
-const dot6 = new Dot(new THREE.Vector3(75, 0, 0));
-const dot7 = new Dot(new THREE.Vector3(35, 0, 45));
-const dot8 = new Dot(new THREE.Vector3(-35, 0, 45));
 
-//Add dots to the scene
-scene.add(dot1.mesh);
-scene.add(dot1.pointLight);
+// Function to load a level
+function loadLevel(levelIndex) {
+  // Clear existing dots
+  dots.forEach(dot => {
+    scene.remove(dot.mesh);
+    scene.remove(dot.pointLight);
+  });
+  dots.length = 0; // Clear the array
 
-scene.add(dot2.mesh);
-scene.add(dot2.pointLight);
-
-scene.add(dot3.mesh);
-scene.add(dot3.pointLight);
-
-scene.add(dot4.mesh);
-scene.add(dot4.pointLight);
-
-scene.add(dot5.mesh);
-scene.add(dot5.pointLight);
-
-scene.add(dot6.mesh);
-scene.add(dot6.pointLight);
-
-scene.add(dot7.mesh);
-scene.add(dot7.pointLight);
-
-scene.add(dot8.mesh);
-scene.add(dot8.pointLight);
-
-
-// Add to array
-dots.push(dot1, dot2, dot3, dot4, dot5, dot6, dot7, dot8);
+  // Load new dots for the selected level
+  levels[levelIndex].forEach(position => {
+    const dot = new Dot(position);
+    scene.add(dot.mesh);
+    scene.add(dot.pointLight);
+    dots.push(dot);
+  });
+}
 
 //A class for all text
 class text {
@@ -319,15 +360,10 @@ function gameEnd() {
   gameState = "end";
   console.log("End state reached.");
   
-  const dotConnections = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [3, 4],
-    [4, 5],
-    [5, 6],
-    [6, 7],
-  ];
+  const dotConnections = [];
+  for (let i = 0; i < dots.length - 1; i++) {
+    dotConnections.push([i, i + 1]); // Connect each dot to the next
+  }
 
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 4 });
 
@@ -347,7 +383,7 @@ function gameEnd() {
 
 function animateCameraToCenter(onComplete) {
   // Target position in the center of the scene
-  const targetPosition = new THREE.Vector3(0, 150, 25); // Center of the canvas
+  const targetPosition = new THREE.Vector3(0, 250, 0); // Center of the canvas
   const targetLookAt = new THREE.Vector3(0, 0, 0); // Looking towards the scene center
 
   let progress = 0;
@@ -452,6 +488,9 @@ function resetGame() {
   ballStartedMoving = false;
   startMovingTime = null;
   introTextActive = true;
+  //Select a random level
+  loadLevel(randomLevel);
+
   dots.forEach(dot => {
     dot.reset();
   });
@@ -479,11 +518,36 @@ const maxSpeed = 0.8;
 const VirtualMouse = new THREE.Vector2(0, 0);
 let mouseMoved = false;
 
+//Keyboard movement
+const keys = {
+  ArrowUp: false,
+  ArrowDown: false,
+  ArrowLeft: false,
+  ArrowRight: false
+};
+
+// Listen for keydown events
+window.addEventListener('keydown', (event) => {
+  if (event.key in keys) {
+    keys[event.key] = true;
+  }
+});
+
+// Listen for keyup events
+window.addEventListener('keyup', (event) => {
+  if (event.key in keys) {
+    keys[event.key] = false;
+  }
+});
+
 //Text animation based on ball movement variables
 let ballStartedMoving = false;
 let startMovingTime = null;
 const fadeDelay = 500;
 const fadeDuration = 1000;
+
+const randomLevel = Math.floor(Math.random() * levels.length);
+loadLevel(randomLevel);
 
 function animate() {
   if (gameState === "playing"){
@@ -517,6 +581,20 @@ function animate() {
     if (Math.abs(velocityZ) < 0.0001) velocityZ = 0;
   }
 
+  //keyboard movement
+  if (keys.ArrowUp) {
+    velocityZ -= 0.15; // Move forward
+  }
+  if (keys.ArrowDown) {
+    velocityZ += 0.15; // Move backward
+  }
+  if (keys.ArrowLeft) {
+    velocityX -= 0.15; // Move left
+  }
+  if (keys.ArrowRight) {
+    velocityX += 0.15; // Move right
+  }
+
   // Apply movement to the ball with friction
   ball.position.x += velocityX;
   ball.position.z += velocityZ;
@@ -532,10 +610,10 @@ function animate() {
   }
 
   // Constrain the ball's position within the plane boundaries
-  const planeHalfSize = 200; // Half the size of the plane
-  ball.position.x = THREE.MathUtils.clamp(ball.position.x, -planeHalfSize, planeHalfSize);
-  ball.position.z = THREE.MathUtils.clamp(ball.position.z, -planeHalfSize, planeHalfSize);
-
+  const planeHalfWidth = 400; // Half the width of the plane
+  const planeHalfDepth = 200; // Half the depth of the plane
+  ball.position.x = THREE.MathUtils.clamp(ball.position.x, -planeHalfWidth, planeHalfWidth);
+  ball.position.z = THREE.MathUtils.clamp(ball.position.z, -planeHalfDepth, planeHalfDepth);
 
   // Calculate closest dot
   let closestDot = null;
@@ -638,7 +716,7 @@ function animate() {
     }
   }
   //Game ends
-  if (dotsLit == 2){
+  if (dotsLit == dots.length){
     gameEnd();
   }
 
