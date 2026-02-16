@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const audioElement = new Audio('./audio/bard.bgm.1hr.mp3');
 const audioSource = audioContext.createMediaElementSource(audioElement);
