@@ -8,8 +8,10 @@ const panner = audioContext.createStereoPanner();
 //connect the audio nodes
 audioSource.connect(panner);
 panner.connect(audioContext.destination);
-audioSource.loop = true;
-panner.volume = 0.2;
+// audioSource.loop = true;
+// panner.volume = 0.2;
+audioElement.loop = true;
+audioElement.volume = 0.2;
 
 function startBackgroundMusic(){
   audioElement.play()
