@@ -331,8 +331,7 @@ setInterval(() => {
 
 //Ball Movement 2
 // Request pointer lock on click
-renderer.domElement.addEventListener('click', async () => {
-  await audioContext.resume();
+renderer.domElement.addEventListener('click', () => {
   startBackgroundMusic();
   renderer.domElement.requestPointerLock();
 });
