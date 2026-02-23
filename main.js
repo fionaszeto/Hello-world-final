@@ -47,6 +47,29 @@ function adjustPanning(ballPosition, dotPosition){
   panner.pan.value = panValue;
 }
 
+function showSoundErrorOverlay() {
+  const overlay = document.createElement("div");
+  overlay.innerHTML = `
+    <div style="
+      position:fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      background:black;
+      color:white;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:20px;
+      text-align:center;
+      padding:40px;
+      z-index:9999;">
+      Sound is blocked in your browser.<br><br>
+      Please go into settings in the address bar<br>
+      and set Sound to "Allow" for the full experience.
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
 
 //Setup
 let dotsLit = 0;
@@ -331,9 +354,23 @@ setInterval(() => {
 
 //Ball Movement 2
 // Request pointer lock on click
-renderer.domElement.addEventListener('click', () => {
-  startBackgroundMusic();
-  renderer.domElement.requestPointerLock();
+// renderer.domElement.addEventListener('click', () => {
+//   startBackgroundMusic();
+//   renderer.domElement.requestPointerLock();
+// });
+renderer.domElement.addEventListener('click', async () => {
+
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+
+  try {
+    await audioElement.play();
+    renderer.domElement.requestPointerLock();
+  } catch (err) {
+    showSoundErrorOverlay();
+  }
+
 });
 
 
